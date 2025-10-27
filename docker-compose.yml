@@ -452,6 +452,216 @@ services:
       - wol-network
     restart: unless-stopped
 
+  # ============================================================================
+  # Worker Services (Background Processing)
+  # ============================================================================
+
+  # Notification Worker
+  notification-worker:
+    build:
+      context: ./src/Workers/Notification
+      dockerfile: Dockerfile
+    container_name: wol-notification-worker
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - MongoDB__ConnectionString=mongodb://mongodb:27017
+      - MongoDB__DatabaseName=wol_notifications
+      - Redis__ConnectionString=redis:6379
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=guest
+      - RabbitMQ__Password=guest
+      - Firebase__ProjectId=${FIREBASE_PROJECT_ID:-wol-app}
+      - Firebase__CredentialsPath=/secrets/firebase-credentials.json
+      - Twilio__AccountSid=${TWILIO_ACCOUNT_SID}
+      - Twilio__AuthToken=${TWILIO_AUTH_TOKEN}
+      - Twilio__FromNumber=${TWILIO_FROM_NUMBER}
+      - SendGrid__ApiKey=${SENDGRID_API_KEY}
+      - NotificationWorker__MaxConcurrentMessages=10
+      - NotificationWorker__RetryAttempts=3
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wol-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Analytics Worker
+  analytics-worker:
+    build:
+      context: ./src/Workers/Analytics
+      dockerfile: Dockerfile
+    container_name: wol-analytics-worker
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - MongoDB__ConnectionString=mongodb://mongodb:27017
+      - MongoDB__DatabaseName=wol_analytics
+      - Redis__ConnectionString=redis:6379
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=guest
+      - RabbitMQ__Password=guest
+      - AnalyticsWorker__MaxConcurrentMessages=20
+      - AnalyticsWorker__AggregationIntervalMinutes=5
+      - AnalyticsWorker__ArchiveAfterDays=90
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wol-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # Document Processing Worker
+  document-worker:
+    build:
+      context: ./src/Workers/Document
+      dockerfile: Dockerfile
+    container_name: wol-document-worker
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=wol_document;Username=postgres;Password=postgres
+      - Redis__ConnectionString=redis:6379
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=guest
+      - RabbitMQ__Password=guest
+      - Azure__ComputerVision__Endpoint=${AZURE_CV_ENDPOINT}
+      - Azure__ComputerVision__ApiKey=${AZURE_CV_API_KEY}
+      - Azure__BlobStorage__ConnectionString=${AZURE_BLOB_CONNECTION_STRING}
+      - DocumentWorker__MaxConcurrentMessages=5
+      - DocumentWorker__MaxFileSizeMB=10
+      - DocumentWorker__OCRProvider=AzureComputerVision
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wol-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # Compliance Worker
+  compliance-worker:
+    build:
+      context: ./src/Workers/Compliance
+      dockerfile: Dockerfile
+    container_name: wol-compliance-worker
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=wol_compliance;Username=postgres;Password=postgres
+      - Redis__ConnectionString=redis:6379
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=guest
+      - RabbitMQ__Password=guest
+      - ComplianceWorker__DailyCheckTime=02:00
+      - ComplianceWorker__ExpiryAlertDays=30,15,7,1
+      - ComplianceWorker__AutoBlockOnExpiry=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wol-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Reporting Worker
+  reporting-worker:
+    build:
+      context: ./src/Workers/Reporting
+      dockerfile: Dockerfile
+    container_name: wol-reporting-worker
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - MongoDB__ConnectionString=mongodb://mongodb:27017
+      - MongoDB__DatabaseName=wol_reports
+      - Redis__ConnectionString=redis:6379
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=guest
+      - RabbitMQ__Password=guest
+      - ReportingWorker__MaxConcurrentReports=3
+      - ReportingWorker__ReportRetentionDays=90
+      - ReportingWorker__EmailDelivery=true
+      - SendGrid__ApiKey=${SENDGRID_API_KEY}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wol-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # Backload Matching Worker
+  backload-worker:
+    build:
+      context: ./src/Workers/Backload
+      dockerfile: Dockerfile
+    container_name: wol-backload-worker
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=wol_backload;Username=postgres;Password=postgres
+      - Redis__ConnectionString=redis:6379
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Username=guest
+      - RabbitMQ__Password=guest
+      - BackloadWorker__MaxConcurrentMatches=10
+      - BackloadWorker__MinMatchScore=0.7
+      - BackloadWorker__MaxMatchRadius=50
+      - BackloadWorker__MatchExpiryHours=24
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wol-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
 # ============================================================================
 # Networks
 # ============================================================================
