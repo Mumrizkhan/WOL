@@ -1,23 +1,33 @@
 using MassTransit;
 using WOL.Shared.Messages.Events;
+using WOL.AnalyticsWorker.Services;
 
 namespace WOL.AnalyticsWorker;
 
-public class LocationUpdateConsumer : IConsumer<LocationUpdateEvent>
+public class LocationUpdateConsumer : IConsumer<LocationUpdatedEvent>
 {
     private readonly ILogger<LocationUpdateConsumer> _logger;
+    private readonly IAnalyticsService _analyticsService;
 
-    public LocationUpdateConsumer(ILogger<LocationUpdateConsumer> logger)
+    public LocationUpdateConsumer(
+        ILogger<LocationUpdateConsumer> logger,
+        IAnalyticsService analyticsService)
     {
         _logger = logger;
+        _analyticsService = analyticsService;
     }
 
-    public async Task Consume(ConsumeContext<LocationUpdateEvent> context)
+    public async Task Consume(ConsumeContext<LocationUpdatedEvent> context)
     {
-        _logger.LogInformation("Processing analytics for LocationUpdateEvent: {VehicleId}", context.Message.VehicleId);
+        _logger.LogDebug("Processing location update for Booking: {BookingId}", context.Message.BookingId);
 
-        await Task.Delay(50);
+        var message = context.Message;
 
-        _logger.LogInformation("Analytics recorded for Vehicle {VehicleId}", context.Message.VehicleId);
+        await _analyticsService.RecordLocationUpdateAsync(
+            message.BookingId,
+            message.DriverId,
+            message.Latitude,
+            message.Longitude,
+            message.Timestamp);
     }
 }

@@ -1,23 +1,34 @@
 using MassTransit;
 using WOL.Shared.Messages.Events;
+using WOL.ReportingWorker.Services;
 
 namespace WOL.ReportingWorker;
 
 public class BookingCompletedReportConsumer : IConsumer<BookingCompletedEvent>
 {
     private readonly ILogger<BookingCompletedReportConsumer> _logger;
+    private readonly IReportingService _reportingService;
 
-    public BookingCompletedReportConsumer(ILogger<BookingCompletedReportConsumer> logger)
+    public BookingCompletedReportConsumer(
+        ILogger<BookingCompletedReportConsumer> logger,
+        IReportingService reportingService)
     {
         _logger = logger;
+        _reportingService = reportingService;
     }
 
     public async Task Consume(ConsumeContext<BookingCompletedEvent> context)
     {
         _logger.LogInformation("Processing report data for BookingCompletedEvent: {BookingId}", context.Message.BookingId);
 
-        await Task.Delay(100);
+        var message = context.Message;
 
-        _logger.LogInformation("Report data recorded for Booking {BookingId}", context.Message.BookingId);
+        await _reportingService.AggregateBookingDataAsync(
+            message.BookingId,
+            message.CustomerId,
+            message.TotalAmount,
+            message.CompletedAt);
+
+        _logger.LogInformation("Report data aggregated for Booking {BookingId}", context.Message.BookingId);
     }
 }

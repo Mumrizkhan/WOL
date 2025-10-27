@@ -1,6 +1,7 @@
 using MassTransit;
 using Serilog;
 using WOL.NotificationWorker;
+using WOL.NotificationWorker.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -9,6 +10,10 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 
 builder.Services.AddSerilog();
+
+builder.Services.AddHttpClient<INotificationService, NotificationService>();
+
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 builder.Services.AddMassTransit(x =>
 {

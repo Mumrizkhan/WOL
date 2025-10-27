@@ -1,6 +1,7 @@
 using MassTransit;
 using Serilog;
 using WOL.DocumentWorker;
+using WOL.DocumentWorker.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -9,6 +10,9 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 
 builder.Services.AddSerilog();
+
+builder.Services.AddHttpClient<IDocumentProcessingService, DocumentProcessingService>();
+builder.Services.AddScoped<IDocumentProcessingService, DocumentProcessingService>();
 
 builder.Services.AddMassTransit(x =>
 {
