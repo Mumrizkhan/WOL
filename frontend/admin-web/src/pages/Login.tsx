@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuthStore } from '../store/authStore'
+import { useTranslation } from 'react-i18next'
+import { useAppDispatch } from '../store/hooks'
+import { login as loginAction } from '../store/slices/authSlice'
 import { authApi } from '../lib/api'
 import { Truck } from 'lucide-react'
 
 export default function Login() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
-  const { login } = useAuthStore()
+  const dispatch = useAppDispatch()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -19,10 +22,10 @@ export default function Login() {
 
     try {
       const response = await authApi.login(email, password)
-      login(response.data.token, response.data.user)
+      dispatch(loginAction({ token: response.data.token, user: response.data.user }))
       navigate('/')
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed')
+      setError(err.response?.data?.message || t('messages.loginFailed'))
     } finally {
       setLoading(false)
     }
@@ -36,8 +39,8 @@ export default function Login() {
             <div className="w-16 h-16 bg-primary-600 rounded-full flex items-center justify-center mb-4">
               <Truck className="h-8 w-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">WOL Admin</h1>
-            <p className="text-gray-600 mt-2">Sign in to your account</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('app.name')}</h1>
+            <p className="text-gray-600 mt-2">{t('auth.signInToContinue')}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -49,7 +52,7 @@ export default function Login() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email
+                {t('auth.email')}
               </label>
               <input
                 type="email"
@@ -63,7 +66,7 @@ export default function Login() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password
+                {t('auth.password')}
               </label>
               <input
                 type="password"
@@ -80,7 +83,7 @@ export default function Login() {
               disabled={loading}
               className="w-full bg-primary-600 text-white py-3 rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? t('auth.signingIn') : t('auth.login')}
             </button>
           </form>
         </div>
