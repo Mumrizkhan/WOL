@@ -1,0 +1,8 @@
+{
+  "name": "@wol/shared-i18n",
+  "version": "1.0.0",
+  "description": "Shared translations for World of Logistics applications",
+  "main": "index.js",
+  "private": true,
+  "license": "UNLICENSED"
+}
