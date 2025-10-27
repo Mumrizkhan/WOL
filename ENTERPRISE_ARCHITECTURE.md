@@ -159,7 +159,7 @@ The system follows Clean Architecture principles with clear separation of concer
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         API Gateway                              │
-│              (Ocelot / YARP - Routing & Auth)                   │
+│              (Ocelot - Routing & Auth)                          │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
         ┌─────────────────────┴─────────────────────┐
@@ -1832,71 +1832,286 @@ public static class MassTransitConfiguration
 
 ## 6. API Gateway & Authentication
 
-### 6.1 API Gateway (YARP)
+### 6.1 API Gateway (Ocelot)
+
+**Ocelot Configuration (ocelot.json):**
 
 ```json
 {
-  "ReverseProxy": {
-    "Routes": {
-      "identity-route": {
-        "ClusterId": "identity-cluster",
-        "Match": {
-          "Path": "/api/identity/{**catch-all}"
-        },
-        "Transforms": [
-          { "PathPattern": "/api/identity/{**catch-all}" }
-        ]
-      },
-      "booking-route": {
-        "ClusterId": "booking-cluster",
-        "AuthorizationPolicy": "authenticated",
-        "Match": {
-          "Path": "/api/bookings/{**catch-all}"
+  "Routes": [
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "identity-service",
+          "Port": 5001
         }
-      },
-      "vehicle-route": {
-        "ClusterId": "vehicle-cluster",
-        "AuthorizationPolicy": "authenticated",
-        "Match": {
-          "Path": "/api/vehicles/{**catch-all}"
-        }
-      },
-      "payment-route": {
-        "ClusterId": "payment-cluster",
-        "AuthorizationPolicy": "authenticated",
-        "Match": {
-          "Path": "/api/payments/{**catch-all}"
-        }
-      }
+      ],
+      "UpstreamPathTemplate": "/api/identity/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "RouteIsCaseSensitive": false,
+      "Key": "identity-service"
     },
-    "Clusters": {
-      "identity-cluster": {
-        "Destinations": {
-          "destination1": {
-            "Address": "http://identity-service:5001"
-          }
-        },
-        "LoadBalancingPolicy": "RoundRobin"
-      },
-      "booking-cluster": {
-        "Destinations": {
-          "destination1": {
-            "Address": "http://booking-service:5002"
-          }
-        },
-        "HealthCheck": {
-          "Active": {
-            "Enabled": true,
-            "Interval": "00:00:10",
-            "Timeout": "00:00:05",
-            "Policy": "ConsecutiveFailures",
-            "Path": "/health"
-          }
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "booking-service",
+          "Port": 5002
         }
-      }
+      ],
+      "UpstreamPathTemplate": "/api/bookings/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "booking-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "vehicle-service",
+          "Port": 5003
+        }
+      ],
+      "UpstreamPathTemplate": "/api/vehicles/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "vehicle-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "pricing-service",
+          "Port": 5004
+        }
+      ],
+      "UpstreamPathTemplate": "/api/pricing/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "pricing-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "backload-service",
+          "Port": 5005
+        }
+      ],
+      "UpstreamPathTemplate": "/api/backload/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "backload-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "tracking-service",
+          "Port": 5006
+        }
+      ],
+      "UpstreamPathTemplate": "/api/tracking/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "tracking-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "payment-service",
+          "Port": 5007
+        }
+      ],
+      "UpstreamPathTemplate": "/api/payments/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "payment-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "notification-service",
+          "Port": 5008
+        }
+      ],
+      "UpstreamPathTemplate": "/api/notifications/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "notification-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "document-service",
+          "Port": 5009
+        }
+      ],
+      "UpstreamPathTemplate": "/api/documents/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "document-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "compliance-service",
+          "Port": 5010
+        }
+      ],
+      "UpstreamPathTemplate": "/api/compliance/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "compliance-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "analytics-service",
+          "Port": 5011
+        }
+      ],
+      "UpstreamPathTemplate": "/api/analytics/{everything}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "analytics-service"
+    }
+  ],
+  "GlobalConfiguration": {
+    "BaseUrl": "http://localhost:5000",
+    "RateLimitOptions": {
+      "DisableRateLimitHeaders": false,
+      "QuotaExceededMessage": "Rate limit exceeded. Please try again later.",
+      "HttpStatusCode": 429
+    },
+    "QoSOptions": {
+      "ExceptionsAllowedBeforeBreaking": 3,
+      "DurationOfBreak": 10000,
+      "TimeoutValue": 30000
+    },
+    "LoadBalancerOptions": {
+      "Type": "RoundRobin"
+    },
+    "ServiceDiscoveryProvider": {
+      "Type": "Docker",
+      "Host": "localhost",
+      "Port": 2375
     }
   }
 }
+```
+
+**Program.cs for Ocelot API Gateway:**
+
+```csharp
+using Ocelot.DependencyInjection;
+using Ocelot.Middleware;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Ocelot configuration
+builder.Configuration.AddJsonFile("ocelot.json", optional: false, reloadOnChange: true);
+
+// Add JWT Authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.Authority = builder.Configuration["Jwt:Issuer"];
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]))
+        };
+    });
+
+// Add Ocelot
+builder.Services.AddOcelot();
+
+// Add CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
+var app = builder.Build();
+
+app.UseCors("AllowAll");
+
+// Use Ocelot middleware
+await app.UseOcelot();
+
+app.Run();
 ```
 
 ### 6.2 JWT Authentication

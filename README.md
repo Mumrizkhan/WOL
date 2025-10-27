@@ -61,7 +61,7 @@ WOL is built using a **microservices architecture** with **clean architecture** 
 #### Infrastructure
 - **Docker**: Containerization
 - **Kubernetes**: Container orchestration
-- **YARP**: API Gateway and reverse proxy
+- **Ocelot**: API Gateway and reverse proxy
 - **Nginx**: Load balancing
 - **Prometheus**: Metrics collection
 - **Grafana**: Metrics visualization
@@ -218,7 +218,7 @@ npm run android
 ```
 WOL/
 ├── src/
-│   ├── ApiGateway/              # API Gateway (YARP)
+│   ├── ApiGateway/              # API Gateway (Ocelot)
 │   ├── Services/                # Microservices
 │   │   ├── Identity/
 │   │   ├── Booking/
