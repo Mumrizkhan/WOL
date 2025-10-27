@@ -61,7 +61,7 @@ WOL is built using a **microservices architecture** with **clean architecture** 
 #### Infrastructure
 - **Docker**: Containerization
 - **Kubernetes**: Container orchestration
-- **YARP**: API Gateway and reverse proxy
+- **Ocelot**: API Gateway and reverse proxy
 - **Nginx**: Load balancing
 - **Prometheus**: Metrics collection
 - **Grafana**: Metrics visualization
@@ -70,8 +70,9 @@ WOL is built using a **microservices architecture** with **clean architecture** 
 
 ### Microservices
 
-The platform consists of 12 core microservices:
+The platform consists of 12 core microservices and 6 worker services:
 
+**API Services:**
 1. **Identity Service**: User authentication, authorization, and profile management
 2. **Booking Service**: Trip booking, scheduling, and lifecycle management
 3. **Vehicle Service**: Fleet and driver management
@@ -84,6 +85,14 @@ The platform consists of 12 core microservices:
 10. **Compliance Service**: BAN time checking and regulatory compliance
 11. **Analytics Service**: Business intelligence and reporting
 12. **Reporting Service**: Scheduled and on-demand report generation
+
+**Worker Services (Background Processing):**
+1. **Notification Worker**: Process RabbitMQ messages and send notifications via Push/SMS/Email
+2. **Analytics Worker**: Aggregate analytics data and calculate KPIs
+3. **Document Worker**: Perform OCR processing and document verification
+4. **Compliance Worker**: Monitor compliance and check document expiry
+5. **Reporting Worker**: Generate scheduled reports and exports
+6. **Backload Worker**: Match backload opportunities with bookings
 
 ### Architecture Diagrams
 
@@ -218,7 +227,7 @@ npm run android
 ```
 WOL/
 ├── src/
-│   ├── ApiGateway/              # API Gateway (YARP)
+│   ├── ApiGateway/              # API Gateway (Ocelot)
 │   ├── Services/                # Microservices
 │   │   ├── Identity/
 │   │   ├── Booking/

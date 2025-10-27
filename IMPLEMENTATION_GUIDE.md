@@ -1558,7 +1558,739 @@ Create controllers, middleware, and configure services.
 
 ---
 
-## 6. Database Setup
+## 6. Worker Services Implementation
+
+Worker Services are .NET background services that handle asynchronous tasks, RabbitMQ message processing, scheduled jobs, and long-running operations. This section provides a complete implementation guide for creating Worker Services.
+
+### 6.1 Worker Service Project Structure
+
+```
+src/Workers/Notification/
+├── WOL.Notification.Worker.csproj
+├── Program.cs
+├── NotificationWorker.cs
+├── Consumers/
+│   ├── SendNotificationConsumer.cs
+│   ├── BookingCreatedConsumer.cs
+│   └── DocumentExpiringConsumer.cs
+├── Services/
+│   ├── INotificationService.cs
+│   ├── NotificationService.cs
+│   ├── IPushNotificationService.cs
+│   ├── PushNotificationService.cs
+│   ├── ISmsService.cs
+│   ├── SmsService.cs
+│   ├── IEmailService.cs
+│   └── EmailService.cs
+├── Configuration/
+│   ├── NotificationWorkerSettings.cs
+│   ├── FirebaseSettings.cs
+│   ├── TwilioSettings.cs
+│   └── SendGridSettings.cs
+├── appsettings.json
+├── appsettings.Development.json
+└── Dockerfile
+```
+
+### 6.2 Create Worker Service Project
+
+```bash
+# Navigate to Workers directory
+cd src/Workers
+
+# Create new Worker Service project
+dotnet new worker -n WOL.Notification.Worker
+
+cd WOL.Notification.Worker
+
+# Add required packages
+dotnet add package MassTransit.RabbitMQ
+dotnet add package Microsoft.Extensions.Hosting
+dotnet add package Serilog.Extensions.Hosting
+dotnet add package Serilog.Sinks.Console
+dotnet add package Serilog.Sinks.File
+dotnet add package MongoDB.Driver
+dotnet add package StackExchange.Redis
+dotnet add package FirebaseAdmin
+dotnet add package Twilio
+dotnet add package SendGrid
+```
+
+### 6.3 Implement Worker Service
+
+**Program.cs:**
+
+```csharp
+using MassTransit;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using MongoDB.Driver;
+using Serilog;
+using StackExchange.Redis;
+using WOL.Notification.Worker;
+using WOL.Notification.Worker.Configuration;
+using WOL.Notification.Worker.Consumers;
+using WOL.Notification.Worker.Services;
+
+// Configure Serilog
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .WriteTo.File("logs/notification-worker-.txt", rollingInterval: RollingInterval.Day)
+    .CreateLogger();
+
+try
+{
+    Log.Information("Starting Notification Worker Service");
+
+    var host = Host.CreateDefaultBuilder(args)
+        .UseSerilog()
+        .ConfigureServices((context, services) =>
+        {
+            var configuration = context.Configuration;
+
+            // Add configuration settings
+            services.Configure<NotificationWorkerSettings>(
+                configuration.GetSection("NotificationWorker"));
+            services.Configure<FirebaseSettings>(
+                configuration.GetSection("Firebase"));
+            services.Configure<TwilioSettings>(
+                configuration.GetSection("Twilio"));
+            services.Configure<SendGridSettings>(
+                configuration.GetSection("SendGrid"));
+
+            // Add MongoDB
+            services.AddSingleton<IMongoClient>(sp =>
+            {
+                var connectionString = configuration["MongoDB:ConnectionString"];
+                return new MongoClient(connectionString);
+            });
+            services.AddScoped(sp =>
+            {
+                var client = sp.GetRequiredService<IMongoClient>();
+                var databaseName = configuration["MongoDB:DatabaseName"];
+                return client.GetDatabase(databaseName);
+            });
+
+            // Add Redis
+            services.AddSingleton<IConnectionMultiplexer>(sp =>
+            {
+                var connectionString = configuration["Redis:ConnectionString"];
+                return ConnectionMultiplexer.Connect(connectionString);
+            });
+
+            // Add notification services
+            services.AddScoped<INotificationService, NotificationService>();
+            services.AddScoped<IPushNotificationService, PushNotificationService>();
+            services.AddScoped<ISmsService, SmsService>();
+            services.AddScoped<IEmailService, EmailService>();
+
+            // Add MassTransit with RabbitMQ
+            services.AddMassTransit(x =>
+            {
+                // Add consumers
+                x.AddConsumer<SendNotificationConsumer>();
+                x.AddConsumer<BookingCreatedConsumer>();
+                x.AddConsumer<DocumentExpiringConsumer>();
+
+                x.UsingRabbitMq((ctx, cfg) =>
+                {
+                    cfg.Host(configuration["RabbitMQ:Host"], h =>
+                    {
+                        h.Username(configuration["RabbitMQ:Username"]);
+                        h.Password(configuration["RabbitMQ:Password"]);
+                    });
+
+                    // Configure notification queue
+                    cfg.ReceiveEndpoint("notification-queue", e =>
+                    {
+                        e.ConfigureConsumer<SendNotificationConsumer>(ctx);
+                        e.PrefetchCount = 10;
+                        e.UseMessageRetry(r => r.Exponential(
+                            3,
+                            TimeSpan.FromSeconds(5),
+                            TimeSpan.FromMinutes(5),
+                            TimeSpan.FromSeconds(5)));
+                    });
+
+                    // Configure booking events queue
+                    cfg.ReceiveEndpoint("notification-booking-events", e =>
+                    {
+                        e.ConfigureConsumer<BookingCreatedConsumer>(ctx);
+                        e.PrefetchCount = 10;
+                    });
+
+                    // Configure document events queue
+                    cfg.ReceiveEndpoint("notification-document-events", e =>
+                    {
+                        e.ConfigureConsumer<DocumentExpiringConsumer>(ctx);
+                        e.PrefetchCount = 5;
+                    });
+                });
+            });
+
+            // Add hosted service
+            services.AddHostedService<NotificationWorker>();
+        })
+        .Build();
+
+    await host.RunAsync();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Notification Worker Service terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
+```
+
+**NotificationWorker.cs:**
+
+```csharp
+using MassTransit;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace WOL.Notification.Worker;
+
+public class NotificationWorker : BackgroundService
+{
+    private readonly IBusControl _busControl;
+    private readonly ILogger<NotificationWorker> _logger;
+
+    public NotificationWorker(
+        IBusControl busControl,
+        ILogger<NotificationWorker> logger)
+    {
+        _busControl = busControl;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("Notification Worker starting at: {time}", DateTimeOffset.Now);
+
+        try
+        {
+            await _busControl.StartAsync(stoppingToken);
+            _logger.LogInformation("Notification Worker started successfully");
+
+            // Keep the worker running
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Notification Worker is stopping due to cancellation");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fatal error in Notification Worker");
+            throw;
+        }
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Notification Worker stopping at: {time}", DateTimeOffset.Now);
+
+        try
+        {
+            await _busControl.StopAsync(cancellationToken);
+            _logger.LogInformation("Notification Worker stopped successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error stopping Notification Worker");
+        }
+
+        await base.StopAsync(cancellationToken);
+    }
+}
+```
+
+### 6.4 Implement Message Consumers
+
+**SendNotificationConsumer.cs:**
+
+```csharp
+using MassTransit;
+using Microsoft.Extensions.Logging;
+using WOL.Notification.Worker.Services;
+using WOL.Shared.Messages;
+
+namespace WOL.Notification.Worker.Consumers;
+
+public class SendNotificationConsumer : IConsumer<SendNotificationCommand>
+{
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<SendNotificationConsumer> _logger;
+
+    public SendNotificationConsumer(
+        INotificationService notificationService,
+        ILogger<SendNotificationConsumer> logger)
+    {
+        _notificationService = notificationService;
+        _logger = logger;
+    }
+
+    public async Task Consume(ConsumeContext<SendNotificationCommand> context)
+    {
+        var message = context.Message;
+
+        _logger.LogInformation(
+            "Processing notification for user {UserId}, Type: {Type}",
+            message.UserId,
+            message.Type);
+
+        try
+        {
+            await _notificationService.SendAsync(
+                message.UserId,
+                message.Title,
+                message.Body,
+                message.Data,
+                message.Channels,
+                context.CancellationToken);
+
+            _logger.LogInformation(
+                "Notification sent successfully for user {UserId}",
+                message.UserId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to send notification for user {UserId}",
+                message.UserId);
+
+            // Throw to trigger retry
+            throw;
+        }
+    }
+}
+```
+
+**BookingCreatedConsumer.cs:**
+
+```csharp
+using MassTransit;
+using Microsoft.Extensions.Logging;
+using WOL.Notification.Worker.Services;
+using WOL.Shared.Events;
+
+namespace WOL.Notification.Worker.Consumers;
+
+public class BookingCreatedConsumer : IConsumer<BookingCreatedEvent>
+{
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<BookingCreatedConsumer> _logger;
+
+    public BookingCreatedConsumer(
+        INotificationService notificationService,
+        ILogger<BookingCreatedConsumer> logger)
+    {
+        _notificationService = notificationService;
+        _logger = logger;
+    }
+
+    public async Task Consume(ConsumeContext<BookingCreatedEvent> context)
+    {
+        var @event = context.Message;
+
+        _logger.LogInformation(
+            "Processing BookingCreatedEvent for booking {BookingId}",
+            @event.BookingId);
+
+        try
+        {
+            // Send notification to customer
+            await _notificationService.SendAsync(
+                @event.CustomerId,
+                "Booking Confirmed",
+                $"Your booking #{@event.BookingNumber} has been confirmed.",
+                new Dictionary<string, string>
+                {
+                    ["bookingId"] = @event.BookingId.ToString(),
+                    ["bookingNumber"] = @event.BookingNumber,
+                    ["type"] = "booking_created"
+                },
+                new[] { "push", "sms" },
+                context.CancellationToken);
+
+            _logger.LogInformation(
+                "Notification sent for booking {BookingId}",
+                @event.BookingId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to send notification for booking {BookingId}",
+                @event.BookingId);
+
+            throw;
+        }
+    }
+}
+```
+
+### 6.5 Implement Notification Services
+
+**INotificationService.cs:**
+
+```csharp
+namespace WOL.Notification.Worker.Services;
+
+public interface INotificationService
+{
+    Task SendAsync(
+        Guid userId,
+        string title,
+        string body,
+        Dictionary<string, string>? data = null,
+        string[]? channels = null,
+        CancellationToken cancellationToken = default);
+}
+```
+
+**NotificationService.cs:**
+
+```csharp
+using Microsoft.Extensions.Logging;
+using MongoDB.Driver;
+
+namespace WOL.Notification.Worker.Services;
+
+public class NotificationService : INotificationService
+{
+    private readonly IPushNotificationService _pushService;
+    private readonly ISmsService _smsService;
+    private readonly IEmailService _emailService;
+    private readonly IMongoDatabase _database;
+    private readonly ILogger<NotificationService> _logger;
+
+    public NotificationService(
+        IPushNotificationService pushService,
+        ISmsService smsService,
+        IEmailService emailService,
+        IMongoDatabase database,
+        ILogger<NotificationService> logger)
+    {
+        _pushService = pushService;
+        _smsService = smsService;
+        _emailService = emailService;
+        _database = database;
+        _logger = logger;
+    }
+
+    public async Task SendAsync(
+        Guid userId,
+        string title,
+        string body,
+        Dictionary<string, string>? data = null,
+        string[]? channels = null,
+        CancellationToken cancellationToken = default)
+    {
+        channels ??= new[] { "push" };
+
+        var tasks = new List<Task>();
+
+        // Send push notification
+        if (channels.Contains("push"))
+        {
+            tasks.Add(SendPushNotificationAsync(userId, title, body, data, cancellationToken));
+        }
+
+        // Send SMS
+        if (channels.Contains("sms"))
+        {
+            tasks.Add(SendSmsAsync(userId, body, cancellationToken));
+        }
+
+        // Send email
+        if (channels.Contains("email"))
+        {
+            tasks.Add(SendEmailAsync(userId, title, body, cancellationToken));
+        }
+
+        await Task.WhenAll(tasks);
+
+        // Log notification to MongoDB
+        await LogNotificationAsync(userId, title, body, channels, cancellationToken);
+    }
+
+    private async Task SendPushNotificationAsync(
+        Guid userId,
+        string title,
+        string body,
+        Dictionary<string, string>? data,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _pushService.SendAsync(userId, title, body, data, cancellationToken);
+            _logger.LogInformation("Push notification sent to user {UserId}", userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send push notification to user {UserId}", userId);
+        }
+    }
+
+    private async Task SendSmsAsync(
+        Guid userId,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _smsService.SendAsync(userId, message, cancellationToken);
+            _logger.LogInformation("SMS sent to user {UserId}", userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send SMS to user {UserId}", userId);
+        }
+    }
+
+    private async Task SendEmailAsync(
+        Guid userId,
+        string subject,
+        string body,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _emailService.SendAsync(userId, subject, body, cancellationToken);
+            _logger.LogInformation("Email sent to user {UserId}", userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send email to user {UserId}", userId);
+        }
+    }
+
+    private async Task LogNotificationAsync(
+        Guid userId,
+        string title,
+        string body,
+        string[] channels,
+        CancellationToken cancellationToken)
+    {
+        var collection = _database.GetCollection<NotificationLog>("notification_logs");
+
+        var log = new NotificationLog
+        {
+            UserId = userId,
+            Title = title,
+            Body = body,
+            Channels = channels,
+            SentAt = DateTime.UtcNow
+        };
+
+        await collection.InsertOneAsync(log, cancellationToken: cancellationToken);
+    }
+}
+
+public class NotificationLog
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public string[] Channels { get; set; } = Array.Empty<string>();
+    public DateTime SentAt { get; set; }
+}
+```
+
+### 6.6 Configuration Files
+
+**appsettings.json:**
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning",
+      "Microsoft.Hosting.Lifetime": "Information"
+    }
+  },
+  "NotificationWorker": {
+    "MaxConcurrentMessages": 10,
+    "RetryAttempts": 3,
+    "RetryDelaySeconds": 5,
+    "BatchSize": 100
+  },
+  "MongoDB": {
+    "ConnectionString": "mongodb://localhost:27017",
+    "DatabaseName": "wol_notifications"
+  },
+  "Redis": {
+    "ConnectionString": "localhost:6379"
+  },
+  "RabbitMQ": {
+    "Host": "localhost",
+    "Username": "guest",
+    "Password": "guest"
+  },
+  "Firebase": {
+    "ProjectId": "wol-app",
+    "CredentialsPath": "/secrets/firebase-credentials.json"
+  },
+  "Twilio": {
+    "AccountSid": "",
+    "AuthToken": "",
+    "FromNumber": ""
+  },
+  "SendGrid": {
+    "ApiKey": ""
+  }
+}
+```
+
+### 6.7 Dockerfile for Worker Service
+
+```dockerfile
+FROM mcr.microsoft.com/dotnet/runtime:8.0 AS base
+WORKDIR /app
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY ["WOL.Notification.Worker.csproj", "./"]
+RUN dotnet restore "WOL.Notification.Worker.csproj"
+COPY . .
+RUN dotnet build "WOL.Notification.Worker.csproj" -c Release -o /app/build
+
+FROM build AS publish
+RUN dotnet publish "WOL.Notification.Worker.csproj" -c Release -o /app/publish
+
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+ENTRYPOINT ["dotnet", "WOL.Notification.Worker.dll"]
+```
+
+### 6.8 Running Worker Service
+
+**Local Development:**
+
+```bash
+# Run worker service
+cd src/Workers/Notification
+dotnet run
+
+# Run with specific environment
+dotnet run --environment Development
+```
+
+**Docker:**
+
+```bash
+# Build Docker image
+docker build -t wol/notification-worker:latest .
+
+# Run container
+docker run -d \
+  --name notification-worker \
+  -e DOTNET_ENVIRONMENT=Development \
+  -e RabbitMQ__Host=rabbitmq \
+  -e MongoDB__ConnectionString=mongodb://mongodb:27017 \
+  wol/notification-worker:latest
+```
+
+**Docker Compose:**
+
+```bash
+# Start all services including workers
+docker-compose up -d
+
+# View worker logs
+docker-compose logs -f notification-worker
+
+# Scale workers
+docker-compose up -d --scale notification-worker=3
+```
+
+### 6.9 Testing Worker Services
+
+**Unit Test Example:**
+
+```csharp
+using Xunit;
+using Moq;
+using Microsoft.Extensions.Logging;
+using WOL.Notification.Worker.Services;
+
+namespace WOL.Notification.Worker.Tests;
+
+public class NotificationServiceTests
+{
+    [Fact]
+    public async Task SendAsync_WithPushChannel_ShouldCallPushService()
+    {
+        // Arrange
+        var mockPushService = new Mock<IPushNotificationService>();
+        var mockSmsService = new Mock<ISmsService>();
+        var mockEmailService = new Mock<IEmailService>();
+        var mockDatabase = new Mock<IMongoDatabase>();
+        var mockLogger = new Mock<ILogger<NotificationService>>();
+
+        var service = new NotificationService(
+            mockPushService.Object,
+            mockSmsService.Object,
+            mockEmailService.Object,
+            mockDatabase.Object,
+            mockLogger.Object);
+
+        var userId = Guid.NewGuid();
+        var title = "Test Title";
+        var body = "Test Body";
+        var channels = new[] { "push" };
+
+        // Act
+        await service.SendAsync(userId, title, body, null, channels);
+
+        // Assert
+        mockPushService.Verify(
+            x => x.SendAsync(userId, title, body, null, It.IsAny<CancellationToken>()),
+            Times.Once);
+        mockSmsService.Verify(
+            x => x.SendAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+}
+```
+
+### 6.10 Monitoring Worker Services
+
+**Health Checks:**
+
+Add health checks to monitor worker service status:
+
+```csharp
+// In Program.cs
+services.AddHealthChecks()
+    .AddRabbitMQ(configuration["RabbitMQ:Host"])
+    .AddMongoDb(configuration["MongoDB:ConnectionString"])
+    .AddRedis(configuration["Redis:ConnectionString"]);
+```
+
+**Metrics:**
+
+Use Prometheus metrics to monitor worker performance:
+
+```csharp
+services.AddSingleton<IMetricsService, MetricsService>();
+
+// Track metrics
+_metricsService.IncrementNotificationsSent();
+_metricsService.RecordProcessingTime(duration);
+```
+
+---
+
+## 7. Database Setup
 
 ### 6.1 Create Migration
 

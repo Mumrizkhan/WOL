@@ -159,7 +159,7 @@ The system follows Clean Architecture principles with clear separation of concer
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         API Gateway                              │
-│              (Ocelot / YARP - Routing & Auth)                   │
+│              (Ocelot - Routing & Auth)                          │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
         ┌─────────────────────┴─────────────────────┐
@@ -897,6 +897,553 @@ POST   /api/reports/schedule
 GET    /api/reports/scheduled
 GET    /api/reports/{id}/download
 ```
+
+---
+
+### 3.3 Worker Services (Background Processing)
+
+Worker Services are .NET background services that handle asynchronous tasks, RabbitMQ message processing, scheduled jobs, and long-running operations. They run independently from the API services and provide better scalability and resilience for background processing.
+
+#### 3.3.1 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         RabbitMQ Broker                          │
+│                    (Message Exchange & Queues)                   │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+        ┌─────────────────────┴─────────────────────┐
+        ↓                     ↓                      ↓
+┌──────────────┐    ┌──────────────┐      ┌──────────────┐
+│ Notification │    │  Analytics   │      │  Document    │
+│    Worker    │    │    Worker    │      │   Worker     │
+└──────────────┘    └──────────────┘      └──────────────┘
+        ↓                     ↓                      ↓
+┌──────────────┐    ┌──────────────┐      ┌──────────────┐
+│  Compliance  │    │   Reporting  │      │   Backload   │
+│    Worker    │    │    Worker    │      │   Worker     │
+└──────────────┘    └──────────────┘      └──────────────┘
+```
+
+#### 3.3.2 Notification Worker Service
+
+**Responsibility**: Process notification requests and send via multiple channels (Push, SMS, Email)
+
+**Key Features:**
+- Consume notification messages from RabbitMQ
+- Send push notifications via Firebase/APNs
+- Send SMS via Twilio/AWS SNS
+- Send emails via SendGrid/AWS SES
+- Retry failed notifications with exponential backoff
+- Track notification delivery status
+- Handle notification templates and localization
+
+**Message Consumers:**
+```csharp
+// Consumes from RabbitMQ queues
+- SendNotificationCommand
+- BookingCreatedEvent
+- BookingAssignedEvent
+- DriverReachedEvent
+- TripCompletedEvent
+- PaymentReceivedEvent
+- DocumentExpiringEvent
+- ComplianceViolationEvent
+```
+
+**Technology:**
+- .NET 8.0 Worker Service
+- MassTransit for RabbitMQ integration
+- Firebase Admin SDK (Push notifications)
+- Twilio SDK (SMS)
+- SendGrid SDK (Email)
+- MongoDB for notification logs
+- Redis for rate limiting
+
+**Configuration:**
+```json
+{
+  "NotificationWorker": {
+    "MaxConcurrentMessages": 10,
+    "RetryAttempts": 3,
+    "RetryDelaySeconds": 5,
+    "BatchSize": 100
+  },
+  "Firebase": {
+    "ProjectId": "wol-app",
+    "CredentialsPath": "/secrets/firebase-credentials.json"
+  },
+  "Twilio": {
+    "AccountSid": "...",
+    "AuthToken": "...",
+    "FromNumber": "+966..."
+  }
+}
+```
+
+---
+
+#### 3.3.3 Analytics Worker Service
+
+**Responsibility**: Process analytics events, aggregate data, and generate insights
+
+**Key Features:**
+- Consume booking, trip, and user behavior events
+- Aggregate data for dashboards
+- Calculate KPIs and metrics
+- Generate route utilization analytics
+- Process driver performance metrics
+- Update real-time analytics dashboards
+- Archive historical data
+
+**Message Consumers:**
+```csharp
+- BookingCompletedEvent
+- TripCompletedEvent
+- PaymentProcessedEvent
+- UserBehaviorEvent
+- LocationUpdateEvent
+- BackloadMatchedEvent
+```
+
+**Technology:**
+- .NET 8.0 Worker Service
+- MassTransit for RabbitMQ integration
+- MongoDB for analytics data
+- Redis for real-time metrics
+- Time-series data processing
+
+**Processing Pipeline:**
+```
+Event → Validation → Transformation → Aggregation → Storage → Cache Update
+```
+
+**Configuration:**
+```json
+{
+  "AnalyticsWorker": {
+    "MaxConcurrentMessages": 20,
+    "AggregationIntervalMinutes": 5,
+    "ArchiveAfterDays": 90
+  }
+}
+```
+
+---
+
+#### 3.3.4 Document Processing Worker Service
+
+**Responsibility**: Process uploaded documents, perform OCR, extract data, and verify compliance
+
+**Key Features:**
+- Consume document upload events
+- Perform OCR using Azure Computer Vision/AWS Textract
+- Extract key information (dates, numbers, text)
+- Validate document authenticity
+- Check expiry dates
+- Generate thumbnails
+- Virus scanning
+- Archive processed documents
+
+**Message Consumers:**
+```csharp
+- DocumentUploadedEvent
+- DocumentVerificationRequestedEvent
+```
+
+**Technology:**
+- .NET 8.0 Worker Service
+- MassTransit for RabbitMQ integration
+- Azure Computer Vision / AWS Textract (OCR)
+- Azure Blob Storage / AWS S3
+- PostgreSQL for metadata
+- ImageSharp for image processing
+
+**Processing Pipeline:**
+```
+Upload → Virus Scan → OCR → Data Extraction → Validation → Thumbnail → Storage → Notification
+```
+
+**Configuration:**
+```json
+{
+  "DocumentWorker": {
+    "MaxConcurrentMessages": 5,
+    "MaxFileSizeMB": 10,
+    "SupportedFormats": ["pdf", "jpg", "png"],
+    "OCRProvider": "AzureComputerVision"
+  }
+}
+```
+
+---
+
+#### 3.3.5 Compliance Worker Service
+
+**Responsibility**: Monitor compliance, check document expiry, enforce BAN times, and send alerts
+
+**Key Features:**
+- Daily compliance checks for all vehicles and drivers
+- Document expiry monitoring (30, 15, 7, 1 day alerts)
+- BAN time enforcement
+- Automatic vehicle/driver blocking for non-compliance
+- Compliance violation tracking
+- Generate compliance reports
+- Send compliance notifications
+
+**Message Consumers:**
+```csharp
+- DailyComplianceCheckScheduled
+- DocumentExpiryCheckScheduled
+- VehicleRegisteredEvent
+- DriverRegisteredEvent
+- DocumentUploadedEvent
+```
+
+**Technology:**
+- .NET 8.0 Worker Service
+- MassTransit for RabbitMQ integration
+- Hangfire for scheduled jobs
+- PostgreSQL for compliance data
+- Redis for caching BAN time rules
+
+**Scheduled Jobs:**
+```csharp
+- Daily compliance check (2:00 AM)
+- Document expiry check (3:00 AM)
+- BAN time validation (every hour)
+- Compliance report generation (weekly)
+```
+
+**Configuration:**
+```json
+{
+  "ComplianceWorker": {
+    "DailyCheckTime": "02:00",
+    "ExpiryAlertDays": [30, 15, 7, 1],
+    "AutoBlockOnExpiry": true
+  }
+}
+```
+
+---
+
+#### 3.3.6 Reporting Worker Service
+
+**Responsibility**: Generate scheduled reports, export data, and deliver reports
+
+**Key Features:**
+- Generate scheduled reports (daily, weekly, monthly)
+- Export to PDF, Excel, CSV
+- Email report delivery
+- Archive generated reports
+- Custom report generation
+- Data aggregation for reports
+
+**Message Consumers:**
+```csharp
+- GenerateReportCommand
+- ScheduledReportDueEvent
+```
+
+**Technology:**
+- .NET 8.0 Worker Service
+- MassTransit for RabbitMQ integration
+- Hangfire for scheduled jobs
+- FastReport / QuestPDF for PDF generation
+- EPPlus for Excel generation
+- MongoDB for report storage
+
+**Report Types:**
+```
+- Daily booking summary
+- Weekly revenue report
+- Monthly driver performance
+- Quarterly compliance report
+- Annual financial report
+- Custom ad-hoc reports
+```
+
+**Configuration:**
+```json
+{
+  "ReportingWorker": {
+    "MaxConcurrentReports": 3,
+    "ReportRetentionDays": 90,
+    "EmailDelivery": true
+  }
+}
+```
+
+---
+
+#### 3.3.7 Backload Matching Worker Service
+
+**Responsibility**: Process backload availability, match with bookings, and optimize routes
+
+**Key Features:**
+- Consume backload availability posts
+- Match with pending bookings
+- Calculate match scores using ML algorithm
+- Optimize route suggestions
+- Send match notifications to drivers
+- Update route utilization analytics
+
+**Message Consumers:**
+```csharp
+- BackloadAvailabilityPostedEvent
+- BookingCreatedEvent
+- TripCompletedEvent
+```
+
+**Technology:**
+- .NET 8.0 Worker Service
+- MassTransit for RabbitMQ integration
+- ML.NET for matching algorithm
+- PostgreSQL for backload data
+- Redis for caching routes
+
+**Matching Algorithm:**
+```
+Score = (RouteMatch × 0.4) + (TimeMatch × 0.3) + (CapacityMatch × 0.2) + (PriceMatch × 0.1)
+```
+
+**Configuration:**
+```json
+{
+  "BackloadWorker": {
+    "MaxConcurrentMatches": 10,
+    "MinMatchScore": 0.7,
+    "MaxMatchRadius": 50,
+    "MatchExpiryHours": 24
+  }
+}
+```
+
+---
+
+#### 3.3.8 Worker Service Implementation Pattern
+
+**Base Worker Service Template:**
+
+```csharp
+using MassTransit;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+public class NotificationWorker : BackgroundService
+{
+    private readonly IBusControl _busControl;
+    private readonly ILogger<NotificationWorker> _logger;
+    
+    public NotificationWorker(
+        IBusControl busControl,
+        ILogger<NotificationWorker> logger)
+    {
+        _busControl = busControl;
+        _logger = logger;
+    }
+    
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("Notification Worker starting...");
+        
+        await _busControl.StartAsync(stoppingToken);
+        
+        _logger.LogInformation("Notification Worker started successfully");
+        
+        // Keep the worker running
+        await Task.Delay(Timeout.Infinite, stoppingToken);
+    }
+    
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Notification Worker stopping...");
+        
+        await _busControl.StopAsync(cancellationToken);
+        
+        _logger.LogInformation("Notification Worker stopped");
+        
+        await base.StopAsync(cancellationToken);
+    }
+}
+
+// Message Consumer
+public class SendNotificationConsumer : IConsumer<SendNotificationCommand>
+{
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<SendNotificationConsumer> _logger;
+    
+    public SendNotificationConsumer(
+        INotificationService notificationService,
+        ILogger<SendNotificationConsumer> logger)
+    {
+        _notificationService = notificationService;
+        _logger = logger;
+    }
+    
+    public async Task Consume(ConsumeContext<SendNotificationCommand> context)
+    {
+        try
+        {
+            _logger.LogInformation(
+                "Processing notification for user {UserId}", 
+                context.Message.UserId);
+            
+            await _notificationService.SendAsync(
+                context.Message.UserId,
+                context.Message.Title,
+                context.Message.Message,
+                context.Message.Channels);
+            
+            _logger.LogInformation(
+                "Notification sent successfully for user {UserId}", 
+                context.Message.UserId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, 
+                "Failed to send notification for user {UserId}", 
+                context.Message.UserId);
+            
+            // Retry with exponential backoff
+            throw;
+        }
+    }
+}
+
+// Program.cs
+public class Program
+{
+    public static async Task Main(string[] args)
+    {
+        var host = Host.CreateDefaultBuilder(args)
+            .ConfigureServices((context, services) =>
+            {
+                // Add MassTransit with RabbitMQ
+                services.AddMassTransit(x =>
+                {
+                    x.AddConsumer<SendNotificationConsumer>();
+                    
+                    x.UsingRabbitMq((ctx, cfg) =>
+                    {
+                        cfg.Host(context.Configuration["RabbitMQ:Host"], h =>
+                        {
+                            h.Username(context.Configuration["RabbitMQ:Username"]);
+                            h.Password(context.Configuration["RabbitMQ:Password"]);
+                        });
+                        
+                        cfg.ReceiveEndpoint("notification-queue", e =>
+                        {
+                            e.ConfigureConsumer<SendNotificationConsumer>(ctx);
+                            e.PrefetchCount = 10;
+                            e.UseMessageRetry(r => r.Exponential(
+                                3, 
+                                TimeSpan.FromSeconds(5), 
+                                TimeSpan.FromMinutes(5), 
+                                TimeSpan.FromSeconds(5)));
+                        });
+                    });
+                });
+                
+                // Add services
+                services.AddScoped<INotificationService, NotificationService>();
+                
+                // Add hosted service
+                services.AddHostedService<NotificationWorker>();
+            })
+            .Build();
+        
+        await host.RunAsync();
+    }
+}
+```
+
+---
+
+#### 3.3.9 Worker Service Deployment
+
+**Docker Deployment:**
+
+Each worker service runs as a separate container with its own scaling configuration:
+
+```yaml
+# docker-compose.yml
+notification-worker:
+  build:
+    context: ./src/Workers/Notification
+    dockerfile: Dockerfile
+  environment:
+    - RabbitMQ__Host=rabbitmq
+    - MongoDB__ConnectionString=mongodb://mongodb:27017
+  depends_on:
+    - rabbitmq
+    - mongodb
+  restart: unless-stopped
+  deploy:
+    replicas: 2
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 512M
+```
+
+**Kubernetes Deployment:**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notification-worker
+  template:
+    metadata:
+      labels:
+        app: notification-worker
+    spec:
+      containers:
+      - name: notification-worker
+        image: wol/notification-worker:latest
+        env:
+        - name: RabbitMQ__Host
+          value: "rabbitmq-service"
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+```
+
+---
+
+#### 3.3.10 Worker Service Benefits
+
+**Advantages of Using Worker Services:**
+
+1. **Separation of Concerns**: API services handle synchronous requests, workers handle async tasks
+2. **Better Scalability**: Scale workers independently based on queue depth
+3. **Improved Resilience**: Failed workers don't affect API availability
+4. **Resource Optimization**: Workers can use different resource profiles
+5. **Better Monitoring**: Separate metrics and logs for background processing
+6. **Easier Debugging**: Isolated worker processes are easier to troubleshoot
+7. **Flexible Deployment**: Deploy workers on different infrastructure (spot instances, etc.)
+
+**When to Use Worker Services vs API Services:**
+
+| Use Worker Service | Use API Service |
+|-------------------|-----------------|
+| Sending notifications | User registration |
+| Processing analytics | Booking creation |
+| Generating reports | Payment processing |
+| OCR processing | Real-time tracking |
+| Compliance checks | Search queries |
+| Backload matching | Profile updates |
 
 ---
 
@@ -1832,71 +2379,286 @@ public static class MassTransitConfiguration
 
 ## 6. API Gateway & Authentication
 
-### 6.1 API Gateway (YARP)
+### 6.1 API Gateway (Ocelot)
+
+**Ocelot Configuration (ocelot.json):**
 
 ```json
 {
-  "ReverseProxy": {
-    "Routes": {
-      "identity-route": {
-        "ClusterId": "identity-cluster",
-        "Match": {
-          "Path": "/api/identity/{**catch-all}"
-        },
-        "Transforms": [
-          { "PathPattern": "/api/identity/{**catch-all}" }
-        ]
-      },
-      "booking-route": {
-        "ClusterId": "booking-cluster",
-        "AuthorizationPolicy": "authenticated",
-        "Match": {
-          "Path": "/api/bookings/{**catch-all}"
+  "Routes": [
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "identity-service",
+          "Port": 5001
         }
-      },
-      "vehicle-route": {
-        "ClusterId": "vehicle-cluster",
-        "AuthorizationPolicy": "authenticated",
-        "Match": {
-          "Path": "/api/vehicles/{**catch-all}"
-        }
-      },
-      "payment-route": {
-        "ClusterId": "payment-cluster",
-        "AuthorizationPolicy": "authenticated",
-        "Match": {
-          "Path": "/api/payments/{**catch-all}"
-        }
-      }
+      ],
+      "UpstreamPathTemplate": "/api/identity/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "RouteIsCaseSensitive": false,
+      "Key": "identity-service"
     },
-    "Clusters": {
-      "identity-cluster": {
-        "Destinations": {
-          "destination1": {
-            "Address": "http://identity-service:5001"
-          }
-        },
-        "LoadBalancingPolicy": "RoundRobin"
-      },
-      "booking-cluster": {
-        "Destinations": {
-          "destination1": {
-            "Address": "http://booking-service:5002"
-          }
-        },
-        "HealthCheck": {
-          "Active": {
-            "Enabled": true,
-            "Interval": "00:00:10",
-            "Timeout": "00:00:05",
-            "Policy": "ConsecutiveFailures",
-            "Path": "/health"
-          }
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "booking-service",
+          "Port": 5002
         }
-      }
+      ],
+      "UpstreamPathTemplate": "/api/bookings/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "booking-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "vehicle-service",
+          "Port": 5003
+        }
+      ],
+      "UpstreamPathTemplate": "/api/vehicles/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "vehicle-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "pricing-service",
+          "Port": 5004
+        }
+      ],
+      "UpstreamPathTemplate": "/api/pricing/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "pricing-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "backload-service",
+          "Port": 5005
+        }
+      ],
+      "UpstreamPathTemplate": "/api/backload/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "backload-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "tracking-service",
+          "Port": 5006
+        }
+      ],
+      "UpstreamPathTemplate": "/api/tracking/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "tracking-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "payment-service",
+          "Port": 5007
+        }
+      ],
+      "UpstreamPathTemplate": "/api/payments/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "payment-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "notification-service",
+          "Port": 5008
+        }
+      ],
+      "UpstreamPathTemplate": "/api/notifications/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "notification-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "document-service",
+          "Port": 5009
+        }
+      ],
+      "UpstreamPathTemplate": "/api/documents/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "document-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "compliance-service",
+          "Port": 5010
+        }
+      ],
+      "UpstreamPathTemplate": "/api/compliance/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "compliance-service"
+    },
+    {
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "analytics-service",
+          "Port": 5011
+        }
+      ],
+      "UpstreamPathTemplate": "/api/analytics/{everything}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer",
+        "AllowedScopes": []
+      },
+      "RouteIsCaseSensitive": false,
+      "Key": "analytics-service"
+    }
+  ],
+  "GlobalConfiguration": {
+    "BaseUrl": "http://localhost:5000",
+    "RateLimitOptions": {
+      "DisableRateLimitHeaders": false,
+      "QuotaExceededMessage": "Rate limit exceeded. Please try again later.",
+      "HttpStatusCode": 429
+    },
+    "QoSOptions": {
+      "ExceptionsAllowedBeforeBreaking": 3,
+      "DurationOfBreak": 10000,
+      "TimeoutValue": 30000
+    },
+    "LoadBalancerOptions": {
+      "Type": "RoundRobin"
+    },
+    "ServiceDiscoveryProvider": {
+      "Type": "Docker",
+      "Host": "localhost",
+      "Port": 2375
     }
   }
 }
+```
+
+**Program.cs for Ocelot API Gateway:**
+
+```csharp
+using Ocelot.DependencyInjection;
+using Ocelot.Middleware;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Ocelot configuration
+builder.Configuration.AddJsonFile("ocelot.json", optional: false, reloadOnChange: true);
+
+// Add JWT Authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.Authority = builder.Configuration["Jwt:Issuer"];
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]))
+        };
+    });
+
+// Add Ocelot
+builder.Services.AddOcelot();
+
+// Add CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
+var app = builder.Build();
+
+app.UseCors("AllowAll");
+
+// Use Ocelot middleware
+await app.UseOcelot();
+
+app.Run();
 ```
 
 ### 6.2 JWT Authentication
