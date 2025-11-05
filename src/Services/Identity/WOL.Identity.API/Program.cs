@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Serilog;
 using MassTransit;
+using MongoDB.Driver;
 using WOL.Identity.Infrastructure.Data;
 using WOL.Identity.Infrastructure.Repositories;
 using WOL.Identity.Infrastructure.Services;
@@ -60,10 +61,21 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
 
+// Configure MongoDB for audit log reads
+var mongoConnectionString = builder.Configuration["MongoDB:ConnectionString"] ?? "mongodb://localhost:27017";
+var mongoDatabaseName = builder.Configuration["MongoDB:DatabaseName"] ?? "wol_audit";
+
+builder.Services.AddSingleton<IMongoClient>(sp => new MongoClient(mongoConnectionString));
+builder.Services.AddSingleton<IMongoDatabase>(sp =>
+{
+    var client = sp.GetRequiredService<IMongoClient>();
+    return client.GetDatabase(mongoDatabaseName);
+});
+
 // Register repositories
 builder.Services.AddScoped<IApplicationUserRepository, ApplicationUserRepository>();
 builder.Services.AddScoped<IOtpRepository, OtpRepository>();
-builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+builder.Services.AddScoped<IAuditLogRepository, MongoAuditLogRepository>();
 
 // Register services
 builder.Services.AddScoped<IOtpService, OtpService>();
