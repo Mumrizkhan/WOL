@@ -117,7 +117,7 @@ public class Booking : BaseEntity
         SetUpdatedAt();
     }
 
-    public void MarkDriverReached()
+    public void MarkDriverReached(double latitude, double longitude, string? photoPath = null)
     {
         if (Status != BookingStatus.DriverAccepted)
             throw new DomainException("Driver must accept booking before reaching pickup location");
@@ -125,6 +125,20 @@ public class Booking : BaseEntity
         Status = BookingStatus.DriverReached;
         DriverReachedAt = DateTime.UtcNow;
         SetUpdatedAt();
+
+        AddDomainEvent(new DriverReachedEvent
+        {
+            BookingId = Id,
+            BookingNumber = BookingNumber,
+            CustomerId = CustomerId,
+            DriverId = DriverId!.Value,
+            VehicleId = VehicleId!.Value,
+            ReachedAt = DriverReachedAt.Value,
+            Latitude = latitude,
+            Longitude = longitude,
+            PhotoPath = photoPath,
+            OccurredOn = DateTime.UtcNow
+        });
     }
 
     public void StartLoading()
@@ -186,6 +200,36 @@ public class Booking : BaseEntity
         CancelledAt = DateTime.UtcNow;
         CancellationReason = reason;
         SetUpdatedAt();
+
+        AddDomainEvent(new BookingCancelledEvent
+        {
+            BookingId = Id,
+            BookingNumber = BookingNumber,
+            CustomerId = CustomerId,
+            DriverId = DriverId,
+            Reason = reason,
+            CancelledAt = CancelledAt.Value,
+            OccurredOn = DateTime.UtcNow
+        });
+    }
+
+    public TimeSpan? GetWaitingTime()
+    {
+        if (DriverReachedAt.HasValue && LoadingStartedAt.HasValue)
+        {
+            return LoadingStartedAt.Value - DriverReachedAt.Value;
+        }
+        else if (DriverReachedAt.HasValue && !LoadingStartedAt.HasValue)
+        {
+            return DateTime.UtcNow - DriverReachedAt.Value;
+        }
+        return null;
+    }
+
+    public bool HasExceededFreeTime(int freeTimeHours = 2)
+    {
+        var waitingTime = GetWaitingTime();
+        return waitingTime.HasValue && waitingTime.Value.TotalHours > freeTimeHours;
     }
 
     public void ApplyDiscount(decimal discountAmount)
