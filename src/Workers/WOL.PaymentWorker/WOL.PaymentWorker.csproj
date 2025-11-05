@@ -17,8 +17,8 @@
 
   <ItemGroup>
     <ProjectReference Include="../../Shared/WOL.Shared.Messages/WOL.Shared.Messages.csproj" />
-    <ProjectReference Include="../../Services/Compliance/WOL.Compliance.Domain/WOL.Compliance.Domain.csproj" />
-    <ProjectReference Include="../../Services/Compliance/WOL.Compliance.Infrastructure/WOL.Compliance.Infrastructure.csproj" />
+    <ProjectReference Include="../../Services/Payment/WOL.Payment.Domain/WOL.Payment.Domain.csproj" />
+    <ProjectReference Include="../../Services/Payment/WOL.Payment.Infrastructure/WOL.Payment.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

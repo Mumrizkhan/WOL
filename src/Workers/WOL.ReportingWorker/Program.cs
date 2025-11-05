@@ -1,7 +1,10 @@
+using Hangfire;
+using Hangfire.PostgreSql;
 using MassTransit;
 using MongoDB.Driver;
 using Serilog;
 using WOL.ReportingWorker;
+using WOL.ReportingWorker.Jobs;
 using WOL.ReportingWorker.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -19,6 +22,17 @@ var mongoDatabase = mongoClient.GetDatabase(mongoDatabaseName);
 
 builder.Services.AddSingleton<IMongoDatabase>(mongoDatabase);
 builder.Services.AddScoped<IReportingService, ReportingService>();
+
+builder.Services.AddHangfire(configuration => configuration
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UsePostgreSqlStorage(c => c.UseNpgsqlConnection(
+        builder.Configuration.GetConnectionString("HangfireConnection"))));
+
+builder.Services.AddHangfireServer();
+
+builder.Services.AddScoped<DailyReportGenerationJob>();
 
 builder.Services.AddMassTransit(x =>
 {
@@ -38,4 +52,10 @@ builder.Services.AddMassTransit(x =>
 });
 
 var host = builder.Build();
+
+RecurringJob.AddOrUpdate<DailyReportGenerationJob>(
+    "daily-report-generation",
+    job => job.Execute(),
+    Cron.Daily);
+
 host.Run();
