@@ -24,6 +24,18 @@ public record CalculatePriceResponse
     public decimal BackloadDiscount { get; init; }
     public decimal FlexibleDateDiscount { get; init; }
     public decimal SharedLoadDiscount { get; init; }
+    public decimal LoyaltyDiscount { get; init; }
     public decimal TotalDiscount { get; init; }
+    public decimal SurgeAmount { get; init; }
+    public decimal WaitingCharges { get; init; }
+    public decimal CancellationFee { get; init; }
     public decimal TotalPrice { get; init; }
+    public List<PriceLineItem> LineItems { get; init; } = new();
+}
+
+public record PriceLineItem
+{
+    public string Description { get; init; } = string.Empty;
+    public decimal Amount { get; init; }
+    public string Type { get; init; } = string.Empty;
 }
