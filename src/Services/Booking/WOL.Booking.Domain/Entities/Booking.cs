@@ -250,6 +250,108 @@ public class Booking : BaseEntity
         SetUpdatedAt();
     }
 
+    public void UpdateDriverReached(string photoPath, decimal latitude, decimal longitude, DateTime reachedAt)
+    {
+        if (Status != BookingStatus.DriverAccepted && Status != BookingStatus.DriverReached)
+            throw new DomainException("Driver must accept booking before reaching pickup location");
+
+        Status = BookingStatus.DriverReached;
+        DriverReachedAt = reachedAt;
+        SetUpdatedAt();
+
+        AddDomainEvent(new DriverReachedEvent
+        {
+            BookingId = Id,
+            BookingNumber = BookingNumber,
+            CustomerId = CustomerId,
+            DriverId = DriverId!.Value,
+            VehicleId = VehicleId!.Value,
+            ReachedAt = reachedAt,
+            Latitude = (double)latitude,
+            Longitude = (double)longitude,
+            PhotoPath = photoPath,
+            OccurredOn = DateTime.UtcNow
+        });
+    }
+
+    public void Complete(DateTime completedAt)
+    {
+        if (Status != BookingStatus.Delivered)
+            throw new DomainException("Booking must be delivered before completion");
+
+        Status = BookingStatus.Completed;
+        CompletedAt = completedAt;
+        SetUpdatedAt();
+
+        AddDomainEvent(new BookingCompletedEvent
+        {
+            BookingId = Id,
+            BookingNumber = BookingNumber,
+            CustomerId = CustomerId,
+            DriverId = DriverId!.Value,
+            TotalFare = FinalFare,
+            OccurredOn = DateTime.UtcNow
+        });
+    }
+
+    public void AssignDriver(Guid driverId, Guid vehicleId)
+    {
+        if (Status != BookingStatus.Pending)
+            throw new DomainException("Cannot assign driver to booking that is not pending");
+
+        VehicleId = vehicleId;
+        DriverId = driverId;
+        Status = BookingStatus.DriverAssigned;
+        DriverAssignedAt = DateTime.UtcNow;
+        SetUpdatedAt();
+
+        AddDomainEvent(new BookingAssignedEvent
+        {
+            BookingId = Id,
+            BookingNumber = BookingNumber,
+            CustomerId = CustomerId,
+            VehicleId = vehicleId,
+            DriverId = driverId,
+            OccurredOn = DateTime.UtcNow
+        });
+    }
+
+    public static Booking CreateSharedLoad(
+        Guid customerId,
+        string pickupCity,
+        string deliveryCity,
+        DateTime pickupDate,
+        decimal weight,
+        decimal volume,
+        string vehicleType)
+    {
+        var origin = new Location(pickupCity, 0, 0, pickupCity);
+        var destination = new Location(deliveryCity, 0, 0, deliveryCity);
+        var cargo = new CargoDetails("Shared Load", weight, volume, 1);
+        var shipper = new ContactInfo("Customer", "0000000000");
+        var receiver = new ContactInfo("Receiver", "0000000000");
+
+        var booking = new Booking
+        {
+            BookingNumber = GenerateBookingNumber(),
+            CustomerId = customerId,
+            VehicleTypeId = Guid.NewGuid(),
+            Origin = origin,
+            Destination = destination,
+            PickupDate = pickupDate,
+            PickupTime = TimeSpan.FromHours(9),
+            Cargo = cargo,
+            Shipper = shipper,
+            Receiver = receiver,
+            BookingType = BookingType.SharedLoad,
+            Status = BookingStatus.Pending,
+            TotalFare = 0,
+            FinalFare = 0
+        };
+
+        return booking;
+    }
+
     private static string GenerateBookingNumber()
     {
         return $"BK{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";

@@ -25,6 +25,8 @@ builder.Services.AddDbContext<PricingDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddScoped<IPricingRuleRepository, PricingRuleRepository>();
+builder.Services.AddScoped<IFeeConfigurationRepository, FeeConfigurationRepository>();
+builder.Services.AddScoped<IDiscountConfigurationRepository, DiscountConfigurationRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddMediatR(cfg => 

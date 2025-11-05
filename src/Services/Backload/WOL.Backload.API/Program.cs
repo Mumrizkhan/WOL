@@ -7,6 +7,7 @@ using WOL.Backload.Infrastructure.Data;
 using WOL.Backload.Infrastructure.Repositories;
 using WOL.Backload.Infrastructure;
 using WOL.Backload.Domain.Repositories;
+using WOL.Backload.Domain.Services;
 using WOL.Shared.Common.Application;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,7 +26,9 @@ builder.Services.AddDbContext<BackloadDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddScoped<IBackloadOpportunityRepository, BackloadOpportunityRepository>();
+builder.Services.AddScoped<IRouteUtilizationRepository, RouteUtilizationRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<LoadRecommendationEngine>();
 
 builder.Services.AddMediatR(cfg => 
     cfg.RegisterServicesFromAssembly(typeof(WOL.Backload.Application.Commands.CreateBackloadOpportunityCommand).Assembly));

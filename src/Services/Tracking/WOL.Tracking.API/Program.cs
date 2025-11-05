@@ -3,11 +3,15 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Serilog;
+using MassTransit;
 using WOL.Tracking.Infrastructure.Data;
 using WOL.Tracking.Infrastructure.Repositories;
 using WOL.Tracking.Infrastructure;
 using WOL.Tracking.Domain.Repositories;
 using WOL.Shared.Common.Application;
+using WOL.Tracking.Application.Services;
+using WOL.Tracking.API.Services;
+using WOL.Tracking.API.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,11 +25,28 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddSignalR();
+
 builder.Services.AddDbContext<TrackingDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddScoped<ILocationHistoryRepository, LocationHistoryRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<ILocationUpdateBroadcaster, SignalRLocationUpdateBroadcaster>();
+
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMQ:Host"], h =>
+        {
+            h.Username(builder.Configuration["RabbitMQ:Username"] ?? "guest");
+            h.Password(builder.Configuration["RabbitMQ:Password"] ?? "guest");
+        });
+
+        cfg.ConfigureEndpoints(context);
+    });
+});
 
 builder.Services.AddMediatR(cfg => 
     cfg.RegisterServicesFromAssembly(typeof(WOL.Tracking.Application.Commands.RecordLocationCommand).Assembly));
@@ -68,6 +89,7 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<LocationTrackingHub>("/hubs/location");
 
 using (var scope = app.Services.CreateScope())
 {

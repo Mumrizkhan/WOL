@@ -4,6 +4,7 @@ namespace WOL.Pricing.Application.Commands;
 
 public record CalculatePriceCommand : IRequest<CalculatePriceResponse>
 {
+    public Guid CustomerId { get; init; }
     public string VehicleType { get; init; } = string.Empty;
     public string FromCity { get; init; } = string.Empty;
     public string ToCity { get; init; } = string.Empty;
@@ -13,6 +14,9 @@ public record CalculatePriceCommand : IRequest<CalculatePriceResponse>
     public bool IsFlexibleDate { get; init; }
     public bool IsSharedLoad { get; init; }
     public decimal? CapacityUtilization { get; init; }
+    public DateTime BookingDateTime { get; init; }
+    public decimal? WaitingHours { get; init; }
+    public bool IsCancelled { get; init; }
 }
 
 public record CalculatePriceResponse
