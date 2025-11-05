@@ -1,8 +1,9 @@
 using MediatR;
 using Microsoft.AspNetCore.Identity;
+using MassTransit;
 using WOL.Identity.Domain.Entities;
 using WOL.Identity.Domain.Enums;
-using WOL.Identity.Domain.Repositories;
+using WOL.Shared.Messages.Events;
 
 namespace WOL.Identity.Application.Commands;
 
@@ -10,16 +11,16 @@ public class AssignRoleCommandHandler : IRequestHandler<AssignRoleCommand, bool>
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly RoleManager<ApplicationRole> _roleManager;
-    private readonly IAuditLogRepository _auditLogRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
 
     public AssignRoleCommandHandler(
         UserManager<ApplicationUser> userManager,
         RoleManager<ApplicationRole> roleManager,
-        IAuditLogRepository auditLogRepository)
+        IPublishEndpoint publishEndpoint)
     {
         _userManager = userManager;
         _roleManager = roleManager;
-        _auditLogRepository = auditLogRepository;
+        _publishEndpoint = publishEndpoint;
     }
 
     public async Task<bool> Handle(AssignRoleCommand request, CancellationToken cancellationToken)
@@ -36,12 +37,12 @@ public class AssignRoleCommandHandler : IRequestHandler<AssignRoleCommand, bool>
 
         if (result.Succeeded)
         {
-            await _auditLogRepository.AddAsync(new AuditLog
+            await _publishEndpoint.Publish(new AuditLogCreatedEvent
             {
                 Id = Guid.NewGuid(),
                 UserId = user.Id,
                 Username = user.UserName,
-                Action = AuditAction.RoleAssigned,
+                Action = AuditAction.RoleAssigned.ToString(),
                 EntityName = "UserRole",
                 EntityId = request.UserId.ToString(),
                 NewValues = $"Role: {request.RoleName}",

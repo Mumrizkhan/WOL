@@ -1,21 +1,22 @@
 using MediatR;
+using MassTransit;
 using WOL.Identity.Domain.Enums;
-using WOL.Identity.Domain.Repositories;
 using WOL.Identity.Infrastructure.Services;
+using WOL.Shared.Messages.Events;
 
 namespace WOL.Identity.Application.Commands;
 
 public class GenerateOtpCommandHandler : IRequestHandler<GenerateOtpCommand, string>
 {
     private readonly IOtpService _otpService;
-    private readonly IAuditLogRepository _auditLogRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
 
     public GenerateOtpCommandHandler(
         IOtpService otpService,
-        IAuditLogRepository auditLogRepository)
+        IPublishEndpoint publishEndpoint)
     {
         _otpService = otpService;
-        _auditLogRepository = auditLogRepository;
+        _publishEndpoint = publishEndpoint;
     }
 
     public async Task<string> Handle(GenerateOtpCommand request, CancellationToken cancellationToken)
@@ -26,11 +27,11 @@ public class GenerateOtpCommandHandler : IRequestHandler<GenerateOtpCommand, str
             request.PhoneNumber,
             request.Email);
 
-        await _auditLogRepository.AddAsync(new Domain.Entities.AuditLog
+        await _publishEndpoint.Publish(new AuditLogCreatedEvent
         {
             Id = Guid.NewGuid(),
             UserId = request.UserId,
-            Action = AuditAction.OtpGenerated,
+            Action = AuditAction.OtpGenerated.ToString(),
             EntityName = "OtpCode",
             EntityId = otp.Id.ToString(),
             NewValues = $"Purpose: {request.Purpose}",

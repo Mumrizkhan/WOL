@@ -1,23 +1,24 @@
 using MediatR;
 using Microsoft.AspNetCore.Identity;
 using System.Security.Claims;
+using MassTransit;
 using WOL.Identity.Domain.Entities;
 using WOL.Identity.Domain.Enums;
-using WOL.Identity.Domain.Repositories;
+using WOL.Shared.Messages.Events;
 
 namespace WOL.Identity.Application.Commands;
 
 public class AddClaimCommandHandler : IRequestHandler<AddClaimCommand, bool>
 {
     private readonly UserManager<ApplicationUser> _userManager;
-    private readonly IAuditLogRepository _auditLogRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
 
     public AddClaimCommandHandler(
         UserManager<ApplicationUser> userManager,
-        IAuditLogRepository auditLogRepository)
+        IPublishEndpoint publishEndpoint)
     {
         _userManager = userManager;
-        _auditLogRepository = auditLogRepository;
+        _publishEndpoint = publishEndpoint;
     }
 
     public async Task<bool> Handle(AddClaimCommand request, CancellationToken cancellationToken)
@@ -31,12 +32,12 @@ public class AddClaimCommandHandler : IRequestHandler<AddClaimCommand, bool>
 
         if (result.Succeeded)
         {
-            await _auditLogRepository.AddAsync(new AuditLog
+            await _publishEndpoint.Publish(new AuditLogCreatedEvent
             {
                 Id = Guid.NewGuid(),
                 UserId = user.Id,
                 Username = user.UserName,
-                Action = AuditAction.ClaimAdded,
+                Action = AuditAction.ClaimAdded.ToString(),
                 EntityName = "UserClaim",
                 EntityId = request.UserId.ToString(),
                 NewValues = $"Type: {request.ClaimType}, Value: {request.ClaimValue}",

@@ -1,21 +1,22 @@
 using MediatR;
+using MassTransit;
 using WOL.Identity.Domain.Enums;
-using WOL.Identity.Domain.Repositories;
 using WOL.Identity.Infrastructure.Services;
+using WOL.Shared.Messages.Events;
 
 namespace WOL.Identity.Application.Commands;
 
 public class VerifyOtpCommandHandler : IRequestHandler<VerifyOtpCommand, bool>
 {
     private readonly IOtpService _otpService;
-    private readonly IAuditLogRepository _auditLogRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
 
     public VerifyOtpCommandHandler(
         IOtpService otpService,
-        IAuditLogRepository auditLogRepository)
+        IPublishEndpoint publishEndpoint)
     {
         _otpService = otpService;
-        _auditLogRepository = auditLogRepository;
+        _publishEndpoint = publishEndpoint;
     }
 
     public async Task<bool> Handle(VerifyOtpCommand request, CancellationToken cancellationToken)
@@ -24,11 +25,11 @@ public class VerifyOtpCommandHandler : IRequestHandler<VerifyOtpCommand, bool>
 
         if (isValid)
         {
-            await _auditLogRepository.AddAsync(new Domain.Entities.AuditLog
+            await _publishEndpoint.Publish(new AuditLogCreatedEvent
             {
                 Id = Guid.NewGuid(),
                 UserId = request.UserId,
-                Action = AuditAction.OtpVerified,
+                Action = AuditAction.OtpVerified.ToString(),
                 EntityName = "OtpCode",
                 EntityId = request.UserId.ToString(),
                 NewValues = $"Purpose: {request.Purpose}",
