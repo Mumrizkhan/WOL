@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch } from '../store/hooks'
 import { login as loginAction } from '../store/slices/authSlice'
-import { authApi } from '../lib/api'
+import { useLogin } from '../services/auth'
 import { Truck } from 'lucide-react'
 
 export default function Login() {
@@ -13,21 +13,27 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  
+  const loginMutation = useLogin()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    setLoading(true)
 
     try {
-      const response = await authApi.login(email, password)
-      dispatch(loginAction({ token: response.data.token, user: response.data.user }))
+      const response = await loginMutation.mutateAsync({ email, password })
+      dispatch(loginAction({ 
+        token: response.token, 
+        user: { 
+          id: response.userId, 
+          email: response.email,
+          userType: response.userType,
+          roles: response.roles
+        } 
+      }))
       navigate('/')
     } catch (err: any) {
-      setError(err.response?.data?.message || t('messages.loginFailed'))
-    } finally {
-      setLoading(false)
+      setError(err.message || t('messages.loginFailed'))
     }
   }
 
@@ -80,10 +86,10 @@ export default function Login() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loginMutation.isPending}
               className="w-full bg-primary-600 text-white py-3 rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? t('auth.signingIn') : t('auth.login')}
+              {loginMutation.isPending ? t('auth.signingIn') : t('auth.login')}
             </button>
           </form>
         </div>
