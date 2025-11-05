@@ -17,7 +17,10 @@ public class Booking : BaseEntity
     public Location Destination { get; private set; } = null!;
     public DateTime PickupDate { get; private set; }
     public TimeSpan PickupTime { get; private set; }
+    public BookingDuration? Duration { get; private set; }
     public CargoDetails Cargo { get; private set; } = null!;
+    public string? CargoPhotoPath { get; private set; }
+    public string? EmptyLoadPhotoPath { get; private set; }
     public ContactInfo Shipper { get; private set; } = null!;
     public ContactInfo Receiver { get; private set; } = null!;
     public BookingType BookingType { get; private set; }
@@ -48,7 +51,9 @@ public class Booking : BaseEntity
         ContactInfo shipper,
         ContactInfo receiver,
         BookingType bookingType,
-        decimal totalFare)
+        decimal totalFare,
+        BookingDuration? duration = null,
+        string? cargoPhotoPath = null)
     {
         var booking = new Booking
         {
@@ -59,7 +64,9 @@ public class Booking : BaseEntity
             Destination = destination,
             PickupDate = pickupDate,
             PickupTime = pickupTime,
+            Duration = duration,
             Cargo = cargo,
+            CargoPhotoPath = cargoPhotoPath,
             Shipper = shipper,
             Receiver = receiver,
             BookingType = bookingType,
@@ -191,7 +198,7 @@ public class Booking : BaseEntity
         });
     }
 
-    public void Cancel(string reason)
+    public void Cancel(string reason, string? emptyLoadPhotoPath = null)
     {
         if (Status == BookingStatus.Completed || Status == BookingStatus.Cancelled)
             throw new DomainException("Cannot cancel completed or already cancelled booking");
@@ -199,6 +206,7 @@ public class Booking : BaseEntity
         Status = BookingStatus.Cancelled;
         CancelledAt = DateTime.UtcNow;
         CancellationReason = reason;
+        EmptyLoadPhotoPath = emptyLoadPhotoPath;
         SetUpdatedAt();
 
         AddDomainEvent(new BookingCancelledEvent
