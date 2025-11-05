@@ -9,6 +9,8 @@ public class ApplicationUser : IdentityUser<Guid>
     public string? IqamaNumber { get; set; }
     public string? IdNumber { get; set; }
     public string? CommercialRegistration { get; set; }
+    public DateTime? CommercialLicenseExpiryDate { get; set; }
+    public string? VATNumber { get; set; }
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string? CompanyName { get; set; }
