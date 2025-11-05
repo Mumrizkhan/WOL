@@ -1,5 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
-import { analyticsApi } from '../lib/api'
 import { 
   TrendingUp, 
   Users, 
@@ -9,22 +7,12 @@ import {
   Clock
 } from 'lucide-react'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { useDashboardStats, useBookingTrends, useRevenueTrends } from '../services/analytics'
 
 export default function Dashboard() {
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ['dashboard-stats'],
-    queryFn: () => analyticsApi.getDashboardStats(),
-  })
-
-  const { data: bookingTrends } = useQuery({
-    queryKey: ['booking-trends'],
-    queryFn: () => analyticsApi.getBookingTrends(),
-  })
-
-  const { data: revenueTrends } = useQuery({
-    queryKey: ['revenue-trends'],
-    queryFn: () => analyticsApi.getRevenueTrends(),
-  })
+  const { data: stats, isLoading } = useDashboardStats()
+  const { data: bookingTrends } = useBookingTrends()
+  const { data: revenueTrends } = useRevenueTrends()
 
   if (isLoading) {
     return (
@@ -34,13 +22,15 @@ export default function Dashboard() {
     )
   }
 
-  const statsData = stats?.data || {
+  const statsData = stats || {
     totalBookings: 1234,
     activeBookings: 89,
+    completedBookings: 1100,
     totalRevenue: 456789,
-    totalUsers: 567,
+    totalDrivers: 150,
+    activeDrivers: 89,
     totalVehicles: 234,
-    pendingPayments: 45,
+    complianceViolations: 5,
   }
 
   const statCards = [
@@ -66,8 +56,8 @@ export default function Dashboard() {
       change: '+23.1%',
     },
     {
-      name: 'Total Users',
-      value: statsData.totalUsers,
+      name: 'Active Drivers',
+      value: statsData.activeDrivers,
       icon: Users,
       color: 'bg-orange-500',
       change: '+5.4%',
@@ -80,30 +70,30 @@ export default function Dashboard() {
       change: '+3.2%',
     },
     {
-      name: 'Pending Payments',
-      value: statsData.pendingPayments,
+      name: 'Compliance Issues',
+      value: statsData.complianceViolations,
       icon: TrendingUp,
       color: 'bg-red-500',
       change: '-2.1%',
     },
   ]
 
-  const bookingData = bookingTrends?.data || [
-    { date: '2024-01', bookings: 65 },
-    { date: '2024-02', bookings: 78 },
-    { date: '2024-03', bookings: 90 },
-    { date: '2024-04', bookings: 81 },
-    { date: '2024-05', bookings: 95 },
-    { date: '2024-06', bookings: 110 },
+  const bookingData = bookingTrends || [
+    { date: '2024-01', count: 65 },
+    { date: '2024-02', count: 78 },
+    { date: '2024-03', count: 90 },
+    { date: '2024-04', count: 81 },
+    { date: '2024-05', count: 95 },
+    { date: '2024-06', count: 110 },
   ]
 
-  const revenueData = revenueTrends?.data || [
-    { month: 'Jan', revenue: 45000 },
-    { month: 'Feb', revenue: 52000 },
-    { month: 'Mar', revenue: 48000 },
-    { month: 'Apr', revenue: 61000 },
-    { month: 'May', revenue: 55000 },
-    { month: 'Jun', revenue: 67000 },
+  const revenueData = revenueTrends || [
+    { date: 'Jan', amount: 45000 },
+    { date: 'Feb', amount: 52000 },
+    { date: 'Mar', amount: 48000 },
+    { date: 'Apr', amount: 61000 },
+    { date: 'May', amount: 55000 },
+    { date: 'Jun', amount: 67000 },
   ]
 
   return (
@@ -147,7 +137,7 @@ export default function Dashboard() {
               <XAxis dataKey="date" />
               <YAxis />
               <Tooltip />
-              <Line type="monotone" dataKey="bookings" stroke="#0ea5e9" strokeWidth={2} />
+              <Line type="monotone" dataKey="count" stroke="#0ea5e9" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -158,10 +148,10 @@ export default function Dashboard() {
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
+              <XAxis dataKey="date" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="revenue" fill="#8b5cf6" />
+              <Bar dataKey="amount" fill="#8b5cf6" />
             </BarChart>
           </ResponsiveContainer>
         </div>

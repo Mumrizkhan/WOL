@@ -11,10 +11,16 @@
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.1.3" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
     <PackageReference Include="MongoDB.Driver" Version="2.23.1" />
+    <PackageReference Include="Hangfire.AspNetCore" Version="1.8.6" />
+    <PackageReference Include="Hangfire.PostgreSql" Version="1.20.4" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../Shared/WOL.Shared.Messages/WOL.Shared.Messages.csproj" />
+    <ProjectReference Include="../../Services/Backload/WOL.Backload.Domain/WOL.Backload.Domain.csproj" />
+    <ProjectReference Include="../../Services/Backload/WOL.Backload.Infrastructure/WOL.Backload.Infrastructure.csproj" />
+    <ProjectReference Include="../../Services/Booking/WOL.Booking.Domain/WOL.Booking.Domain.csproj" />
+    <ProjectReference Include="../../Services/Booking/WOL.Booking.Infrastructure/WOL.Booking.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

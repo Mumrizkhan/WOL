@@ -11,6 +11,9 @@ public class BookingDbContext : DbContext
     }
 
     public DbSet<Domain.Entities.Booking> Bookings => Set<Domain.Entities.Booking>();
+    public DbSet<BANTiming> BANTimings => Set<BANTiming>();
+    public DbSet<WaitingCharge> WaitingCharges => Set<WaitingCharge>();
+    public DbSet<CancellationFee> CancellationFees => Set<CancellationFee>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -92,5 +95,9 @@ public class BookingDbContext : DbContext
             
             entity.Ignore(e => e.DomainEvents);
         });
+
+        modelBuilder.ApplyConfiguration(new Configurations.BANTimingConfiguration());
+        modelBuilder.ApplyConfiguration(new Configurations.WaitingChargeConfiguration());
+        modelBuilder.ApplyConfiguration(new Configurations.CancellationFeeConfiguration());
     }
 }

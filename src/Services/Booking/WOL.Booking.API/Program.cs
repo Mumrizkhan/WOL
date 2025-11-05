@@ -3,12 +3,14 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Serilog;
+using MassTransit;
 using WOL.Booking.Infrastructure.Data;
 using WOL.Booking.Infrastructure.Repositories;
 using WOL.Booking.Infrastructure.Services;
 using WOL.Booking.Infrastructure;
 using WOL.Booking.Domain.Repositories;
 using WOL.Booking.Application.Services;
+using WOL.Compliance.Application.Services;
 using WOL.Shared.Common.Application;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,9 +29,25 @@ builder.Services.AddDbContext<BookingDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
+builder.Services.AddScoped<ISharedLoadBookingRepository, SharedLoadBookingRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddScoped<IPricingService, PricingService>();
+builder.Services.AddScoped<ComplianceCheckService>();
+
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMQ:Host"], h =>
+        {
+            h.Username(builder.Configuration["RabbitMQ:Username"] ?? "guest");
+            h.Password(builder.Configuration["RabbitMQ:Password"] ?? "guest");
+        });
+
+        cfg.ConfigureEndpoints(context);
+    });
+});
 
 builder.Services.AddMediatR(cfg => 
     cfg.RegisterServicesFromAssembly(typeof(WOL.Booking.Application.Commands.CreateBookingCommand).Assembly));
