@@ -1,22 +1,23 @@
 using MediatR;
 using Microsoft.AspNetCore.Identity;
+using MassTransit;
 using WOL.Identity.Domain.Entities;
 using WOL.Identity.Domain.Enums;
-using WOL.Identity.Domain.Repositories;
+using WOL.Shared.Messages.Events;
 
 namespace WOL.Identity.Application.Commands;
 
 public class RemoveRoleCommandHandler : IRequestHandler<RemoveRoleCommand, bool>
 {
     private readonly UserManager<ApplicationUser> _userManager;
-    private readonly IAuditLogRepository _auditLogRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
 
     public RemoveRoleCommandHandler(
         UserManager<ApplicationUser> userManager,
-        IAuditLogRepository auditLogRepository)
+        IPublishEndpoint publishEndpoint)
     {
         _userManager = userManager;
-        _auditLogRepository = auditLogRepository;
+        _publishEndpoint = publishEndpoint;
     }
 
     public async Task<bool> Handle(RemoveRoleCommand request, CancellationToken cancellationToken)
@@ -29,12 +30,12 @@ public class RemoveRoleCommandHandler : IRequestHandler<RemoveRoleCommand, bool>
 
         if (result.Succeeded)
         {
-            await _auditLogRepository.AddAsync(new AuditLog
+            await _publishEndpoint.Publish(new AuditLogCreatedEvent
             {
                 Id = Guid.NewGuid(),
                 UserId = user.Id,
                 Username = user.UserName,
-                Action = AuditAction.RoleRemoved,
+                Action = AuditAction.RoleRemoved.ToString(),
                 EntityName = "UserRole",
                 EntityId = request.UserId.ToString(),
                 OldValues = $"Role: {request.RoleName}",
